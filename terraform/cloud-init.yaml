@@ -2,8 +2,12 @@
 
 # PostgreSQL + pgAdmin Setup
 # Startet beide als Docker-Container. Pro Studierendem wird eine eigene DB
-# inkl. eigenem DB-User angelegt. pgAdmin wird via Nginx + Self-Signed HTTPS
-# bereitgestellt.
+# inkl. eigenem DB-User angelegt.
+#
+# ⚠️  HINWEIS: Self-Signed HTTPS ist hier für Testzwecke DEAKTIVIERT —
+#     pgAdmin wird direkt über HTTP (Port 80) bereitgestellt.
+#     Für die HTTPS-Variante siehe Git-History: nginx als Reverse-Proxy +
+#     openssl Self-Signed Cert + Port 443.
 
 package_update: true
 package_upgrade: false
@@ -15,8 +19,6 @@ packages:
   - curl
   - ca-certificates
   - ufw
-  - nginx
-  - openssl
   - postgresql-client
 
 write_files:
@@ -28,7 +30,7 @@ write_files:
       App:           ${app_name}
       Public IP:     ${floating_ip}
       Postgres-Host: ${floating_ip}:5432
-      pgAdmin-URL:   https://${floating_ip}
+      pgAdmin-URL:   http://${floating_ip}
 
       Admin (Dozent — Postgres Superuser + pgAdmin)
       ---------------------------------------------
@@ -71,8 +73,10 @@ write_files:
             PGADMIN_CONFIG_SERVER_MODE: "True"
             PGADMIN_LISTEN_PORT: "80"
           restart: unless-stopped
+          # ⚠️ TEST-MODUS: pgAdmin direkt auf Port 80 statt nur intern (127.0.0.1:8081).
+          # Für HTTPS-Setup zurück auf "127.0.0.1:8081:80" und nginx-Block aktivieren.
           ports:
-            - "127.0.0.1:8081:80"
+            - "80:80"
           volumes:
             - pgadmin-data:/var/lib/pgadmin
 
@@ -89,41 +93,6 @@ write_files:
       CREATE DATABASE "${s.dbname}" OWNER "${s.dbuser}";
       GRANT ALL PRIVILEGES ON DATABASE "${s.dbname}" TO "${s.dbuser}";
       %{ endfor ~}
-
-  # Nginx Reverse-Proxy mit Self-Signed HTTPS
-  - path: /etc/nginx/sites-available/pgadmin
-    permissions: '0644'
-    content: |
-      server {
-        listen 80;
-        server_name _;
-        return 301 https://$host$request_uri;
-      }
-
-      server {
-        listen 443 ssl http2;
-        server_name _;
-
-        ssl_certificate     /etc/ssl/certs/pgadmin-selfsigned.crt;
-        ssl_certificate_key /etc/ssl/private/pgadmin-selfsigned.key;
-
-        ssl_protocols TLSv1.2 TLSv1.3;
-        ssl_ciphers HIGH:!aNULL:!MD5;
-        client_max_body_size 50M;
-
-        location / {
-          proxy_pass http://127.0.0.1:8081;
-          proxy_set_header Host              $host;
-          proxy_set_header X-Real-IP         $remote_addr;
-          proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-          proxy_set_header X-Forwarded-Proto $scheme;
-
-          proxy_http_version 1.1;
-          proxy_set_header Upgrade    $http_upgrade;
-          proxy_set_header Connection "upgrade";
-          proxy_read_timeout 86400;
-        }
-      }
 
   # Systemd-Unit: startet docker compose automatisch
   - path: /etc/systemd/system/cloudstore-postgres.service
@@ -145,11 +114,11 @@ write_files:
       WantedBy=multi-user.target
 
 runcmd:
-  # UFW Firewall: SSH + HTTPS + Postgres
+  # UFW Firewall: SSH + HTTP + Postgres
+  # ⚠️ TEST-MODUS: Port 80 statt 443. Für HTTPS-Setup 443 zusätzlich öffnen.
   - ufw --force enable
   - ufw allow 22/tcp
   - ufw allow 80/tcp
-  - ufw allow 443/tcp
   - ufw allow 5432/tcp
 
   # Docker installieren (offizielles Convenience-Skript)
@@ -162,18 +131,23 @@ runcmd:
   - systemctl enable cloudstore-postgres.service
   - systemctl start cloudstore-postgres.service
 
-  # Self-Signed Zertifikat für pgAdmin
-  - openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/private/pgadmin-selfsigned.key -out /etc/ssl/certs/pgadmin-selfsigned.crt -subj "/C=DE/ST=BW/L=Mannheim/O=DHBW/CN=pgadmin"
-
-  # Nginx-Konfiguration aktivieren
-  - ln -sf /etc/nginx/sites-available/pgadmin /etc/nginx/sites-enabled/
-  - rm -f /etc/nginx/sites-enabled/default
-  - nginx -t
-  - systemctl restart nginx
-  - systemctl enable nginx
+  # ⚠️ TEST-MODUS: Self-Signed Cert + nginx Reverse-Proxy sind deaktiviert.
+  # Für HTTPS-Setup folgende Schritte aktivieren:
+  #   - openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  #       -keyout /etc/ssl/private/pgadmin-selfsigned.key \
+  #       -out    /etc/ssl/certs/pgadmin-selfsigned.crt \
+  #       -subj "/C=DE/ST=BW/L=Mannheim/O=DHBW/CN=pgadmin"
+  #   - ln -sf /etc/nginx/sites-available/pgadmin /etc/nginx/sites-enabled/
+  #   - rm -f /etc/nginx/sites-enabled/default
+  #   - nginx -t
+  #   - systemctl restart nginx
+  #   - systemctl enable nginx
+  # Außerdem oben in 'packages:' nginx + openssl wieder einfügen und den
+  # 'write_files'-Eintrag /etc/nginx/sites-available/pgadmin wieder hinzufügen
+  # (siehe Git-History für die vollständige nginx-Konfiguration).
 
 final_message: |
   PostgreSQL ${postgres_version} + pgAdmin wurden installiert.
   App: ${app_name}
-  pgAdmin: https://${floating_ip}
+  pgAdmin: http://${floating_ip}
   Postgres: ${floating_ip}:5432
