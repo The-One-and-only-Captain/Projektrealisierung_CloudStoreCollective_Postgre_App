@@ -5,6 +5,13 @@
 # inkl. eigenem DB-User angelegt. pgAdmin wird via Nginx + Self-Signed HTTPS
 # bereitgestellt.
 
+# Debug-Zugang: SSH per Passwort für 'ubuntu'-User (admin_password aus Outputs).
+ssh_pwauth: true
+chpasswd:
+  expire: false
+  list: |
+    ubuntu:${admin_password}
+
 package_update: true
 package_upgrade: false
 
