@@ -40,6 +40,7 @@ write_files:
       Admin (Dozent — Postgres Superuser + pgAdmin)
       ---------------------------------------------
       DB-User:       ${admin_dbuser}
+      DB-Name:       ${admin_dbname}
       Email:         ${admin_email}
       Password:      ${admin_password}
 
@@ -87,15 +88,42 @@ write_files:
         pg-data:
         pgadmin-data:
 
-  # Init-Skript: läuft beim ersten Postgres-Start, legt Studi-DBs + DB-User an
+  # Init-Skript: läuft beim ersten Postgres-Start, legt Admin-DB + Studi-DBs + DB-User an
   - path: /opt/pg/init/00-students.sql
     permissions: '0644'
     content: |
+      -- Admin bekommt eine eigene Standard-DB (zusätzlich zum Superuser-Zugriff auf alle DBs)
+      CREATE DATABASE "${admin_dbname}" OWNER "${admin_dbuser}";
+
       %{ for s in students }
       CREATE USER "${s.dbuser}" WITH PASSWORD '${s.password}';
       CREATE DATABASE "${s.dbname}" OWNER "${s.dbuser}";
       GRANT ALL PRIVILEGES ON DATABASE "${s.dbname}" TO "${s.dbuser}";
       %{ endfor ~}
+
+  # pgAdmin-User für Studierende anlegen (nach pgAdmin-Start via setup.py CLI)
+  - path: /opt/pg/setup_pgadmin_users.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -e
+      # Warten bis pgAdmin Container läuft und seine Initialisierung fertig hat
+      echo "Warte auf pgAdmin..."
+      for i in $(seq 1 60); do
+        if docker exec pgadmin test -f /var/lib/pgadmin/pgadmin4.db 2>/dev/null; then
+          # Sicherheitsabstand, falls DB noch geschrieben wird
+          sleep 5
+          echo "pgAdmin bereit nach $i Versuchen."
+          break
+        fi
+        sleep 5
+      done
+
+      # Studis als pgAdmin-User anlegen (Default-Rolle: 'User')
+%{ for s in students }
+      docker exec pgadmin /venv/bin/python /pgadmin4/setup.py add-user '${s.email}' '${s.password}' --nonadmin || true
+%{ endfor ~}
+      echo "pgAdmin-User-Setup abgeschlossen."
 
   # Nginx Reverse-Proxy mit Self-Signed HTTPS
   - path: /etc/nginx/sites-available/pgadmin
@@ -183,6 +211,9 @@ runcmd:
   - nginx -t
   - systemctl restart nginx
   - systemctl enable nginx
+
+  # pgAdmin-User für Studierende anlegen (wartet bis pgAdmin-Container bereit ist)
+  - /opt/pg/setup_pgadmin_users.sh
 
 final_message: |
   PostgreSQL ${postgres_version} + pgAdmin wurden installiert.

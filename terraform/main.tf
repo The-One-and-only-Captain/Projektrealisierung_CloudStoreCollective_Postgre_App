@@ -35,6 +35,7 @@ locals {
   # Postgres-Identifier dürfen bis 63 Zeichen lang sein und unterstützen [a-z0-9_].
   # Hier behalten wir die alte Email-zu-DBuser-Logik (@/. → _, lowercase).
   admin_dbuser = replace(replace(lower(var.admin_username), "@", "_"), ".", "_")
+  admin_dbname = "${replace(replace(lower(var.admin_username), "@", "_"), ".", "_")}_db"
 
   students = [
     for email in local.resolved_students : {
@@ -172,6 +173,7 @@ resource "openstack_compute_instance_v2" "pg_server" {
     postgres_version = var.postgres_version
 
     admin_dbuser   = local.admin_dbuser
+    admin_dbname   = local.admin_dbname
     admin_email    = var.admin_username
     admin_password = random_password.admin_password.result
 

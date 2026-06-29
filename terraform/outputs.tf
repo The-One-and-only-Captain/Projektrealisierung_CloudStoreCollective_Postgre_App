@@ -45,6 +45,7 @@ output "admin_credentials" {
   sensitive   = true
   value = {
     db_username  = local.admin_dbuser
+    db_name      = local.admin_dbname
     email        = var.admin_username
     password     = random_password.admin_password.result
     pgadmin_url  = var.use_mock_provider ? "https://mock-ip" : "https://${openstack_networking_floatingip_v2.pg_fip[0].address}"
