@@ -5,12 +5,8 @@
 # inkl. eigenem DB-User angelegt. pgAdmin wird via Nginx + Self-Signed HTTPS
 # bereitgestellt.
 
-# Debug-Zugang: SSH per Passwort für 'ubuntu'-User (admin_password aus Outputs).
+# Debug-Zugang: SSH per Passwort für den Admin-Account.
 ssh_pwauth: true
-chpasswd:
-  expire: false
-  list: |
-    ubuntu:${admin_password}
 
 package_update: true
 package_upgrade: false
@@ -152,6 +148,13 @@ write_files:
       WantedBy=multi-user.target
 
 runcmd:
+  # Admin-Account für SSH-Debug-Zugang (mit sudo, Passwort-Login)
+  - useradd -m -s /bin/bash -G sudo ${admin_ssh_username}
+  - echo '${admin_ssh_username}:${admin_password}' | chpasswd
+  - sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+  - find /etc/ssh/sshd_config.d -type f -name '*.conf' -exec sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' {} \;
+  - systemctl restart ssh
+
   # UFW Firewall: SSH + HTTPS + Postgres
   - ufw --force enable
   - ufw allow 22/tcp

@@ -41,15 +41,17 @@ output "ssh_command" {
 # ==============================================================================
 
 output "admin_credentials" {
-  description = "Admin-Zugangsdaten des Dozenten (Postgres-Superuser + pgAdmin)"
+  description = "Admin-Zugangsdaten des Dozenten (Postgres-Superuser + pgAdmin + SSH-Debug-Zugang)"
   sensitive   = true
   value = {
-    db_username = local.admin_dbuser
-    email       = var.admin_username
-    password    = random_password.admin_password.result
-    pgadmin_url = var.use_mock_provider ? "https://mock-ip" : "https://${openstack_networking_floatingip_v2.pg_fip[0].address}"
-    psql_host   = var.use_mock_provider ? "mock-ip" : openstack_networking_floatingip_v2.pg_fip[0].address
-    psql_port   = "5432"
+    db_username  = local.admin_dbuser
+    email        = var.admin_username
+    password     = random_password.admin_password.result
+    pgadmin_url  = var.use_mock_provider ? "https://mock-ip" : "https://${openstack_networking_floatingip_v2.pg_fip[0].address}"
+    psql_host    = var.use_mock_provider ? "mock-ip" : openstack_networking_floatingip_v2.pg_fip[0].address
+    psql_port    = "5432"
+    ssh_username = local.admin_ssh_username
+    ssh_command  = "ssh ${local.admin_ssh_username}@${var.use_mock_provider ? "mock-ip" : openstack_networking_floatingip_v2.pg_fip[0].address}"
   }
 }
 
