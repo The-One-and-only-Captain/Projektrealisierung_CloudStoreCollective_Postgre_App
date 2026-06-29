@@ -1,16 +1,179 @@
 #cloud-config
+
+# PostgreSQL + pgAdmin Setup
+# Startet beide als Docker-Container. Pro Studierendem wird eine eigene DB
+# inkl. eigenem DB-User angelegt. pgAdmin wird via Nginx + Self-Signed HTTPS
+# bereitgestellt.
+
+package_update: true
+package_upgrade: false
+
+bootcmd:
+  - mkdir -p /opt/cloudstore /etc/cloudstore /opt/pg
+
+packages:
+  - curl
+  - ca-certificates
+  - ufw
+  - nginx
+  - openssl
+  - postgresql-client
+
 write_files:
-  - path: /etc/cloudstore_app_config.info
+  - path: /etc/cloudstore/postgres_info.txt
+    permissions: '0600'
+    content: |
+      CloudStore PostgreSQL + pgAdmin Deployment
+      ==========================================
+      App:           ${app_name}
+      Public IP:     ${floating_ip}
+      Postgres-Host: ${floating_ip}:5432
+      pgAdmin-URL:   https://${floating_ip}
+
+      Admin (Dozent — Postgres Superuser + pgAdmin)
+      ---------------------------------------------
+      DB-User:       ${admin_dbuser}
+      Email:         ${admin_email}
+      Password:      ${admin_password}
+
+      Studierende (eigene DB + DB-User)
+      ---------------------------------
+      %{ for s in students ~}
+      ${s.dbuser} / DB ${s.dbname} / ${s.email} / ${s.password}
+      %{ endfor ~}
+
+  - path: /opt/pg/docker-compose.yml
     permissions: '0644'
     content: |
-      This file demonstrates that variables were passed correctly.
-      ----------------------------------------------------------
-      App Name:     ${app_name}
-      Environment:  ${environment}
-      Admins:       ${admins}
-      Backup Mode:  ${backup}
-      Disk Size:    ${disk} GB
-      ----------------------------------------------------------
+      services:
+        postgres:
+          image: postgres:${postgres_version}
+          container_name: postgres
+          environment:
+            POSTGRES_USER: "${admin_dbuser}"
+            POSTGRES_PASSWORD: "${admin_password}"
+            POSTGRES_DB: postgres
+          restart: unless-stopped
+          ports:
+            - "5432:5432"
+          volumes:
+            - pg-data:/var/lib/postgresql/data
+            - /opt/pg/init:/docker-entrypoint-initdb.d:ro
+
+        pgadmin:
+          image: dpage/pgadmin4:latest
+          container_name: pgadmin
+          depends_on:
+            - postgres
+          environment:
+            PGADMIN_DEFAULT_EMAIL: "${admin_email}"
+            PGADMIN_DEFAULT_PASSWORD: "${admin_password}"
+            PGADMIN_CONFIG_SERVER_MODE: "True"
+            PGADMIN_LISTEN_PORT: "80"
+          restart: unless-stopped
+          ports:
+            - "127.0.0.1:8081:80"
+          volumes:
+            - pgadmin-data:/var/lib/pgadmin
+
+      volumes:
+        pg-data:
+        pgadmin-data:
+
+  # Init-Skript: läuft beim ersten Postgres-Start, legt Studi-DBs + DB-User an
+  - path: /opt/pg/init/00-students.sql
+    permissions: '0644'
+    content: |
+      %{ for s in students ~}
+      CREATE USER "${s.dbuser}" WITH PASSWORD '${s.password}';
+      CREATE DATABASE "${s.dbname}" OWNER "${s.dbuser}";
+      GRANT ALL PRIVILEGES ON DATABASE "${s.dbname}" TO "${s.dbuser}";
+      %{ endfor ~}
+
+  # Nginx Reverse-Proxy mit Self-Signed HTTPS
+  - path: /etc/nginx/sites-available/pgadmin
+    permissions: '0644'
+    content: |
+      server {
+        listen 80;
+        server_name _;
+        return 301 https://$host$request_uri;
+      }
+
+      server {
+        listen 443 ssl http2;
+        server_name _;
+
+        ssl_certificate     /etc/ssl/certs/pgadmin-selfsigned.crt;
+        ssl_certificate_key /etc/ssl/private/pgadmin-selfsigned.key;
+
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers HIGH:!aNULL:!MD5;
+        client_max_body_size 50M;
+
+        location / {
+          proxy_pass http://127.0.0.1:8081;
+          proxy_set_header Host              $host;
+          proxy_set_header X-Real-IP         $remote_addr;
+          proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade    $http_upgrade;
+          proxy_set_header Connection "upgrade";
+          proxy_read_timeout 86400;
+        }
+      }
+
+  # Systemd-Unit: startet docker compose automatisch
+  - path: /etc/systemd/system/cloudstore-postgres.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=CloudStore PostgreSQL + pgAdmin (docker compose)
+      Requires=docker.service
+      After=docker.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      WorkingDirectory=/opt/pg
+      ExecStart=/usr/bin/docker compose up -d
+      ExecStop=/usr/bin/docker compose down
+
+      [Install]
+      WantedBy=multi-user.target
 
 runcmd:
-  - echo "CloudStore Reference App initialized."
+  # UFW Firewall: SSH + HTTPS + Postgres
+  - ufw --force enable
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw allow 5432/tcp
+
+  # Docker installieren (offizielles Convenience-Skript)
+  - curl -fsSL https://get.docker.com | sh
+  - systemctl enable docker
+  - systemctl start docker
+
+  # Postgres + pgAdmin Stack starten
+  - systemctl daemon-reload
+  - systemctl enable cloudstore-postgres.service
+  - systemctl start cloudstore-postgres.service
+
+  # Self-Signed Zertifikat für pgAdmin
+  - openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/private/pgadmin-selfsigned.key -out /etc/ssl/certs/pgadmin-selfsigned.crt -subj "/C=DE/ST=BW/L=Mannheim/O=DHBW/CN=pgadmin"
+
+  # Nginx-Konfiguration aktivieren
+  - ln -sf /etc/nginx/sites-available/pgadmin /etc/nginx/sites-enabled/
+  - rm -f /etc/nginx/sites-enabled/default
+  - nginx -t
+  - systemctl restart nginx
+  - systemctl enable nginx
+
+final_message: |
+  PostgreSQL ${postgres_version} + pgAdmin wurden installiert.
+  App: ${app_name}
+  pgAdmin: https://${floating_ip}
+  Postgres: ${floating_ip}:5432

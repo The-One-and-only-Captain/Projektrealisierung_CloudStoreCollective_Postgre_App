@@ -1,80 +1,173 @@
-template:
-  # --- METADATA (MANDATORY) ---
-  name: "reference-app-template"
-  display_name: "Reference App Template"
-  description: "Basis-Template für CloudStore Apps. Enthält alle Input-Typen und Validierungsregeln."
-  version: "1.0.0"
-  category: "education"
-  author: "CloudStore Team"
-  icon: "icon.png"
+name: postgres-pgadmin
+display_name: "PostgreSQL + pgAdmin"
+description: "PostgreSQL-Datenbank mit pgAdmin Web-UI für SQL-Übungen. Pro Studierendem eine eigene Datenbank mit Vollzugriff."
+version: "2.0.0"
+category: "education"
+author: "DHBW CloudStore Team"
+icon: postgres.png
 
-  terraform:
-    working_dir: terraform/
-    required_version: ">= 1.6.0"
+terraform:
+  working_dir: terraform/
+  required_version: ">= 1.6.0"
 
-  # --- INPUT PARAMETERS (REFERENCE) ---
-  # Entwickler können diese Sektion anpassen, müssen aber die
-  # Validierungs-Logik in variables.tf übernehmen.
-  parameters:
-  #MANDATORY
-    # 1. STRING (Text mit Regex) (MANDATORY)
+tags:
+  - postgres
+  - database
+  - pgadmin
+  - sql
+  - education
+
+email_credentials:
+  enabled: true
+
+deploy-strategy:
+  one-instance: true
+  one-per-group: true
+
+ui-groups:
+  - id: general
+    title: "Allgemein und Nutzer"
+    order: 1
+  - id: resources
+    title: "Ressourcen"
+    order: 2
+  - id: specific
+    title: "Postgres-Optionen"
+    order: 3
+
+parameters:
+
+  general:
     - name: app_name
       type: string
-      description: "Name der Anwendung (nur Kleinbuchstaben)"
       required: true
       validation:
         pattern: "^[a-z0-9-]{3,20}$"
-  #OPTIONAL
-    # 2. SELECTION (Dropdown)
-    - name: environment
-      type: selection
-      description: "Deployment Umgebung"
-      required: true
-      default: "dev"
-      options:
-        - label: "Development"
-          value: "dev"
-        - label: "Production"
-          value: "prod"
+      description: "Name der Datenbank-Instanz"
+      x-ui:
+        group_id: general
+        in_group_order: 1
+        icon: Server
+        placeholder: "z.B. wwi23sea-postgres"
+        hint: "Nur Kleinbuchstaben, Zahlen und Bindestriche (3-20 Zeichen)"
 
-    # 3. ARRAY (Liste von Strings)
-    - name: admin_emails
+    - name: admin_username
+      type: string
+      required: true
+      description: "Dozent (Postgres-Superuser + pgAdmin-Login)"
+      x-ui:
+        group_id: general
+        in_group_order: 2
+        icon: Users
+        placeholder: "Dozent auswählen..."
+        widget:
+          type: user-picker
+          multi: false
+          extract: email
+
+    - name: students
       type: array
-      description: "Liste der Admin E-Mails"
-      required: true
-      validation:
-        min_items: 1
-        max_items: 5
-
-    # 4. BOOLEAN (Checkbox)
-    - name: enable_backup
-      type: boolean
-      description: "Backups aktivieren?"
-      default: false
       required: false
-
-    # 5. NUMBER (Zahl)
-    - name: disk_size_gb
-      type: number
-      description: "Größe der Festplatte (GB)"
-      default: 10
-      required: true
       validation:
-        min: 10
-        max: 100
+        max_items: 30
+      description: "Studierende (jeder erhält eigene DB + DB-User, bei one-instance)"
+      x-ui:
+        group_id: general
+        in_group_order: 3
+        icon: Users
+        placeholder: "Studierende auswählen..."
+        hint: "Befüllen, wenn alle Studierenden eine geteilte Postgres-Instanz nutzen sollen (eigene DB pro Person). → Strategie 'one-instance' im nächsten Schritt."
+        widget:
+          type: user-picker
+          multi: true
+          extract: email
 
-  # --- OUTPUTS (CONTRACT) ---
-  outputs:
-    # SYSTEM PFLICHTFELD: Wird vom Backend zur Verwaltung benötigt
-    - name: instance_id
-      description: "System ID der Haupt-Instanz"
-      display: false
-    
-    - name: app_name
-      description: "Name der Anwendung"
-      display: true
+    - name: student_groups
+      type: groups
+      required: false
+      description: "Projektgruppen der Studierenden (bei one-per-group: eine VM je Gruppe)"
+      x-ui:
+        group_id: general
+        in_group_order: 4
+        icon: Users
+        hint: "Befüllen, wenn pro Gruppe eine eigene Postgres-Instanz entstehen soll. → Strategie 'one-per-group' im nächsten Schritt."
+        widget:
+          type: group-builder
+          extract: email
 
-    # OPTIONAL: Beispiele für Nutzer-Outputs
-    - name: access_ip
-      description: "Zugriffs-IP"
-      display: true
+  specific:
+    - name: flavor_name
+      type: selection
+      required: true
+      default: "gp1.medium"
+      options:
+        - label: "Small (1 CPU, 2 GB RAM)"
+          value: "gp1.small"
+        - label: "Medium (2 CPU, 4 GB RAM) — Empfohlen"
+          value: "gp1.medium"
+        - label: "Large (4 CPU, 8 GB RAM)"
+          value: "gp1.large"
+      description: "VM-Größe"
+      x-ui:
+        group_id: resources
+        in_group_order: 1
+        icon: Cpu
+        hint: "Medium reicht für SQL-Übungen mit ~20 Studierenden."
+
+    - name: postgres_version
+      type: selection
+      required: true
+      default: "16"
+      options:
+        - label: "PostgreSQL 16 (Empfohlen)"
+          value: "16"
+        - label: "PostgreSQL 15"
+          value: "15"
+        - label: "PostgreSQL 14"
+          value: "14"
+      description: "PostgreSQL Major-Version"
+      x-ui:
+        group_id: specific
+        in_group_order: 1
+        icon: Server
+        hint: "Welche PostgreSQL-Version installiert werden soll."
+
+outputs:
+  - name: instance_id
+    description: "System ID der Instanz"
+    display: false
+
+  - name: app_name
+    description: "Name der Anwendung"
+    display: true
+
+  - name: pgadmin_url
+    description: "pgAdmin Web-Oberfläche"
+    display: true
+
+  - name: postgres_host
+    description: "PostgreSQL Host (für externe Clients)"
+    display: true
+
+  - name: postgres_port
+    description: "PostgreSQL Port"
+    display: true
+
+  - name: ssh_command
+    description: "SSH-Zugang zur VM"
+    display: true
+
+  - name: admin_credentials
+    description: "Admin-Zugangsdaten (Dozent — Postgres-Superuser + pgAdmin)"
+    sensitive: true
+    display: false
+
+  - name: student_credentials
+    description: "Studierenden-Zugangsdaten (DB + Login)"
+    sensitive: true
+    display: false
+
+  - name: ssh_private_key
+    description: "SSH Private Key"
+    sensitive: true
+    display: false
