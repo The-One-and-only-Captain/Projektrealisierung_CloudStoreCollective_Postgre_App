@@ -45,7 +45,7 @@ write_files:
 
       Studierende (eigene DB + DB-User)
       ---------------------------------
-      %{ for s in students ~}
+      %{ for s in students }
       ${s.dbuser} / DB ${s.dbname} / ${s.email} / ${s.password}
       %{ endfor ~}
 
@@ -91,7 +91,7 @@ write_files:
   - path: /opt/pg/init/00-students.sql
     permissions: '0644'
     content: |
-      %{ for s in students ~}
+      %{ for s in students }
       CREATE USER "${s.dbuser}" WITH PASSWORD '${s.password}';
       CREATE DATABASE "${s.dbname}" OWNER "${s.dbuser}";
       GRANT ALL PRIVILEGES ON DATABASE "${s.dbname}" TO "${s.dbuser}";
