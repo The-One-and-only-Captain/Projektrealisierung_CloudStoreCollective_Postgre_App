@@ -107,12 +107,11 @@ write_files:
     content: |
       #!/bin/bash
       set -e
-      # Warten bis pgAdmin Container läuft und seine Initialisierung fertig hat
-      echo "Warte auf pgAdmin..."
+      # Warten bis pgAdmin Container läuft UND seine DB-Migration abgeschlossen hat.
+      # 'get-users' funktioniert nur, wenn die Migration durch ist.
+      echo "Warte auf pgAdmin (Migration komplett)..."
       for i in $(seq 1 60); do
-        if docker exec pgadmin test -f /var/lib/pgadmin/pgadmin4.db 2>/dev/null; then
-          # Sicherheitsabstand, falls DB noch geschrieben wird
-          sleep 5
+        if docker exec pgadmin /venv/bin/python /pgadmin4/setup.py get-users >/dev/null 2>&1; then
           echo "pgAdmin bereit nach $i Versuchen."
           break
         fi
