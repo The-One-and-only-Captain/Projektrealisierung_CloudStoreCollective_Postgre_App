@@ -70,13 +70,13 @@ parameters:
       required: false
       validation:
         max_items: 30
-      description: "Studierende (jeder erhält eigene DB + DB-User, bei one-instance)"
+      description: "Studierende (jeder erhält eigene DB + DB-User)"
       x-ui:
         group_id: general
         in_group_order: 3
         icon: Users
         placeholder: "Studierende auswählen..."
-        hint: "Befüllen, wenn alle Studierenden eine geteilte Postgres-Instanz nutzen sollen (eigene DB pro Person). → Strategie 'one-instance' im nächsten Schritt."
+        hint: "Alle teilnehmenden Studierenden auswählen. Bei Strategie 'one-instance' teilen sich alle eine Postgres-Instanz. Bei 'one-per-group' wird daraus unten die Gruppen-Auswahl."
         widget:
           type: user-picker
           multi: true
@@ -85,12 +85,12 @@ parameters:
     - name: student_groups
       type: groups
       required: false
-      description: "Projektgruppen der Studierenden (bei one-per-group: eine VM je Gruppe)"
+      description: "Projektgruppen der Studierenden (nur bei one-per-group)"
       x-ui:
         group_id: general
         in_group_order: 4
         icon: Users
-        hint: "Befüllen, wenn pro Gruppe eine eigene Postgres-Instanz entstehen soll. → Strategie 'one-per-group' im nächsten Schritt."
+        hint: "Optional: Studierende aus der Auswahl oben in Gruppen einteilen. Bei Strategie 'one-per-group' entsteht pro Gruppe eine eigene Postgres-VM. Bei 'one-instance' ignoriert."
         widget:
           type: group-builder
           extract: email
