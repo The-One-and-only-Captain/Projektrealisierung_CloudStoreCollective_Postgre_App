@@ -118,9 +118,9 @@ write_files:
         sleep 5
       done
 
-      # Studis als pgAdmin-User anlegen (Rolle 'User' = normaler Nicht-Admin)
+      # Studis als pgAdmin-User anlegen (pgAdmin 8.x: kein --role-Flag, kein --admin = normaler User)
 %{ for s in students }
-      docker exec pgadmin /venv/bin/python /pgadmin4/setup.py add-user '${s.email}' '${s.password}' --role User || true
+      docker exec pgadmin /venv/bin/python /pgadmin4/setup.py add-user '${s.email}' '${s.password}' || true
 %{ endfor ~}
       echo "pgAdmin-User-Setup abgeschlossen."
 
