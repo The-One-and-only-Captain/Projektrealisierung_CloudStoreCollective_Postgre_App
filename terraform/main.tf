@@ -43,20 +43,6 @@ locals {
       dbname = "${replace(replace(lower(email), "@", "_"), ".", "_")}_db"
     }
   ]
-
-  # Linux-Username für Admin-SSH-Zugang (kompakt, ≤ 32 Zeichen für UT_NAMESIZE).
-  #   prof1@dhbw-mannheim.de            → prof1_dh-ma_de
-  #   s2327001@student.dhbw-mannheim.de → s2327001_st_dh-ma_de
-  admin_ssh_username = substr(
-    lower(join("_", concat(
-      [split("@", var.admin_username)[0]],
-      [
-        for token in split(".", split("@", var.admin_username)[1]) :
-        join("-", [for part in split("-", token) : substr(part, 0, 2)])
-      ]
-    ))),
-    0, 32
-  )
 }
 
 # ==============================================================================
@@ -185,10 +171,9 @@ resource "openstack_compute_instance_v2" "pg_server" {
     floating_ip      = openstack_networking_floatingip_v2.pg_fip[0].address
     postgres_version = var.postgres_version
 
-    admin_dbuser       = local.admin_dbuser
-    admin_ssh_username = local.admin_ssh_username
-    admin_email        = var.admin_username
-    admin_password     = random_password.admin_password.result
+    admin_dbuser   = local.admin_dbuser
+    admin_email    = var.admin_username
+    admin_password = random_password.admin_password.result
 
     students = [
       for s in local.students : {
